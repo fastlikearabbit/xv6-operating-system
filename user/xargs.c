@@ -33,7 +33,7 @@ xargs(int argc, char *argv[])
     // done reading line, fork and exec
     if (c == '\n') {
       // possibly new word
-      if (!word_offset) {
+      if (word_offset) {
         line[processed_words][word_offset] = 0;
         processed_words++;
       }
@@ -41,10 +41,10 @@ xargs(int argc, char *argv[])
       if (fork() == 0) {
         // all args are in line
         // append to initial args
-        for (int j = i; j - i <= processed_words; j++) {
+        for (int j = i; j - i < processed_words; j++) {
           args[j] = line[j - i];
         }
-        args[i + processed_words + 1] = 0;
+        args[i + processed_words] = 0;
         
         exec(argv[0], args);
         exit(1);
