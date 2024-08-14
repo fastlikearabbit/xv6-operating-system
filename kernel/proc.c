@@ -19,7 +19,7 @@ extern void forkret(void);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
-
+                        
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
 // memory model when using p->parent.
@@ -132,6 +132,13 @@ found:
     return 0;
   }
 
+  if((p->shared = (struct usyscall *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  p->shared->pid = p->pid;
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -172,7 +179,7 @@ freeproc(struct proc *p)
 }
 
 // Create a user page table for a given process, with no user memory,
-// but with trampoline and trapframe pages.
+// but with trampoline and trapframe and usyscall pages.
 pagetable_t
 proc_pagetable(struct proc *p)
 {
@@ -202,6 +209,14 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  // map for the USYSCALL (shared with kernel)
+  if(mappages(pagetable, USYSCALL, PGSIZE,
+              (uint64)(p->shared), PTE_U | PTE_R) < 0){
+    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    uvmunmap(pagetable, USYSCALL, 1, 0);
+    uvmfree(pagetable, 0);
+  }
+
   return pagetable;
 }
 
@@ -212,6 +227,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  uvmunmap(pagetable, USYSCALL, 1, 0);
   uvmfree(pagetable, sz);
 }
 
