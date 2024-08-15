@@ -69,12 +69,47 @@ sys_sleep(void)
   return 0;
 }
 
-
 #ifdef LAB_PGTBL
+
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 int
 sys_pgaccess(void)
 {
-  // lab pgtbl: your code here.
+  // location to hold access bits
+  unsigned int abits = 0;
+  // number of pages to check
+  int npg;
+
+  // starting virtual address
+  uint64 vastart;
+
+  // user space buffer address
+  uint64 ubuf;
+
+  // get args from user space
+  argaddr(0, &vastart);
+  argint(1, &npg);
+  argaddr(2, &ubuf);
+
+  struct proc *p = myproc();
+
+  // process and fill in abits
+  for (int i = 0; i < MIN(npg, 32); i++) {
+    pte_t *pte = walk(p->pagetable, vastart, 0);
+    if (pte == 0) return -1;
+    if ((*pte & PTE_V) && (*pte & PTE_A)) {
+      // set ith bit of abits
+      abits = (1 << i) | abits;
+
+      // unset a bit of pte
+      *pte = *pte & ~PTE_A;
+    }
+    vastart += PGSIZE;
+  }
+
+  // copy bits from kernel to user
+  copyout(p->pagetable, ubuf, (char *)&abits, sizeof(abits));
+  
   return 0;
 }
 #endif
