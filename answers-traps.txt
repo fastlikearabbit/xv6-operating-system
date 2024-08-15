@@ -1,0 +1,7 @@
+-- the args for printf are in a0, a1, a2 (=13); for f and g we have x in a0
+-- the code for f starts at address 0xe and for g at 0x0
+-- printf is located at address 0x630
+-- ra contains value 0x38 immediately after calling printf
+-- the output is He110 World; reverse i, but keep the other
+-- some garbage value from reg a1
+
