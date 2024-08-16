@@ -68,7 +68,7 @@ sys_sleep(void)
   }
   release(&tickslock);
 
-  backtrace();
+  //backtrace();
   return 0;
 }
 
@@ -93,3 +93,54 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_sigalarm(void)
+{
+  int interval;
+  argint(0, &interval);
+
+  uint64 handler;
+  argaddr(1, &handler);
+
+  struct proc *p = myproc();
+  if (!p) return -1;
+
+  p->interval = interval;
+  p->handler = handler;
+
+  return 0;
+}
+
+uint64
+sys_sigreturn(void)
+{
+  /*
+  struct proc *p = myproc();
+  if (!p) return -1;
+
+  p->handlerret = 1;
+
+  p->trapframe->ra = p->saved_regs.ra;
+  p->trapframe->sp = p->saved_regs.sp;
+  p->trapframe->s0 = p->saved_regs.s0;
+  p->trapframe->s1 = p->saved_regs.s1;
+  p->trapframe->s2 = p->saved_regs.s2;
+  p->trapframe->s3 = p->saved_regs.s3;
+  p->trapframe->s4 = p->saved_regs.s4;
+  p->trapframe->s5 = p->saved_regs.s5;
+  p->trapframe->s6 = p->saved_regs.s6;
+  p->trapframe->s7 = p->saved_regs.s7;
+  p->trapframe->s8 = p->saved_regs.s8;
+  p->trapframe->s9 = p->saved_regs.s9;
+  p->trapframe->s10 = p->saved_regs.s10;
+  p->trapframe->s11 = p->saved_regs.s11;
+
+  p->trapframe->a0 = p->saved_a0;
+  p->trapframe->a1 = p->saved_a1;
+  p->trapframe->epc = p->saved_epc;
+
+  return p->saved_a0;*/
+  return 0;
+}
+
