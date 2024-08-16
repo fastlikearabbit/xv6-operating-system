@@ -51,6 +51,7 @@ sys_sbrk(void)
 uint64
 sys_sleep(void)
 {
+  backtrace();
   int n;
   uint ticks0;
 
@@ -68,7 +69,6 @@ sys_sleep(void)
   }
   release(&tickslock);
 
-  backtrace();
   return 0;
 }
 
