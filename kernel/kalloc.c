@@ -30,13 +30,14 @@ struct {
   struct run *freelist;
 } kmem;
 
+int flag = 1;
+
 void
 kinit()
 {
-  for (int i = 0; i < (PHYSTOP - KERNBASE) / PGSIZE; i++)
-	refcounts[i] = 0;
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
+  flag = 0;
 }
 
 void
@@ -46,6 +47,9 @@ freerange(void *pa_start, void *pa_end)
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
     kfree(p);
+  for(int i = PGROUNDUP((uint64)end)/PGSIZE; i < (PHYSTOP - KERNBASE) / PGSIZE; i++)
+	if (refcounts[i] != 0)
+	  printf("incorrect init of refcounts\n");
 }
 
 
@@ -53,6 +57,8 @@ freerange(void *pa_start, void *pa_end)
 // which normally should have been returned by a
 // call to kalloc().  (The exception is when
 // initializing the allocator; see kinit above.)
+
+
 void
 kfree(void *pa)
 {
@@ -60,8 +66,12 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
- 
+
+  if (!flag) 
+    refcounts[getid((uint64)pa)] -= 1;
+
   int rc = refcounts[getid((uint64)pa)];
+  if (rc < 0) printf("incorrect!!!\n");
   if (rc > 0) return;
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -102,6 +112,7 @@ getid(uint64 pa)
   int id =  ((pa) - KERNBASE) / PGSIZE;
   if (id >= 32768 || id < 0)
 	printf("incorrect index! -> %d\n", id);
+  if (pa % PGSIZE != 0) printf("unaligned!!!\n");
   return id;
 }
 
@@ -114,8 +125,6 @@ incrc(uint64 pa)
 void
 decrc(uint64 pa)
 {
-  if (pa < KERNBASE)
-	printf("incorrect index in decrc\n");
   refcounts[getid(pa)] -= 1;
 }
 

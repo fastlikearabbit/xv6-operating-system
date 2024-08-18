@@ -46,10 +46,10 @@ usertrap(void)
   w_stvec((uint64)kernelvec);
 
   struct proc *p = myproc();
-  
+
   // save user program counter.
   p->trapframe->epc = r_sepc();
-  
+
   if(r_scause() == 8){
     // system call
 
@@ -72,34 +72,34 @@ usertrap(void)
 
 	// get faulting virtual address
 	uint64 fva = r_stval();
-	pte_t *fpte = walk(p->pagetable, fva, 0); 
-    if (!fpte) 
+	pte_t *fpte = walk(p->pagetable, fva, 0);
+    if (!fpte)
       panic("usertrap(): pte should exist\n");
 
     if ((*fpte & PTE_V) == 0)
 	  panic("usertrap(): page not present");
-	
+
 	uint64 fpa = PTE2PA(*fpte);
 	uint64 flags = PTE_FLAGS(*fpte);
-	
+
 	// tries to write a previously non-writable page
 	if ((flags & PTE_COW) == 0) {
 	  printf("usertrap(): page not previously writable\n");
       setkilled(p);
 	} else {
-      // all good, allocate a new page	
+      // all good, allocate a new page
 	  uint64 ka = (uint64) kalloc();
 	  if (ka == 0) {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-		panic("usertrap(): no free memory\n");
-	  }
-      memmove((void *)ka, (char *)fpa,  PGSIZE);
-	  decrc((uint64)fpa);
+        printf("usertrap(): no more free memory\n");
+        setkilled(p);
+	  } else {
+        memmove((void *)ka, (char *)fpa,  PGSIZE);
+		kfree((void *) fpa);
 
-      if (mappages(p->pagetable, PGROUNDDOWN(fva), PGSIZE, ka, PTE_U | PTE_R | PTE_V | PTE_W) != 0) {
-		kfree((void *)ka);
-		return;
+        if (mappages(p->pagetable, PGROUNDDOWN(fva), PGSIZE, ka, PTE_U | PTE_R | PTE_V | PTE_W) != 0) {
+		  kfree((void *)ka);
+		  return;
+        }
 	  }
 
 	}
@@ -145,7 +145,7 @@ usertrapret(void)
 
   // set up the registers that trampoline.S's sret will use
   // to get to user space.
-  
+
   // set S Previous Privilege mode to User.
   unsigned long x = r_sstatus();
   x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode
@@ -158,7 +158,7 @@ usertrapret(void)
   // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(p->pagetable);
 
-  // jump to userret in trampoline.S at the top of memory, which 
+  // jump to userret in trampoline.S at the top of memory, which
   // switches to the user page table, restores user registers,
   // and switches to user mode with sret.
   uint64 trampoline_userret = TRAMPOLINE + (userret - trampoline);
@@ -167,14 +167,14 @@ usertrapret(void)
 
 // interrupts and exceptions from kernel code go here via kernelvec,
 // on whatever the current kernel stack is.
-void 
+void
 kerneltrap()
 {
   int which_dev = 0;
   uint64 sepc = r_sepc();
   uint64 sstatus = r_sstatus();
   uint64 scause = r_scause();
-  
+
   if((sstatus & SSTATUS_SPP) == 0)
     panic("kerneltrap: not from supervisor mode");
   if(intr_get() != 0)
@@ -244,7 +244,7 @@ devintr()
     if(cpuid() == 0){
       clockintr();
     }
-    
+
     // acknowledge the software interrupt by clearing
     // the SSIP bit in sip.
     w_sip(r_sip() & ~2);
@@ -254,4 +254,3 @@ devintr()
     return 0;
   }
 }
-
