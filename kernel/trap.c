@@ -67,6 +67,42 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if (r_scause() == 15) {
+	// write page fault
+
+	// get faulting virtual address
+	uint64 fva = r_stval();
+	pte_t *fpte = walk(p->pagetable, fva, 0); 
+    if (!fpte) 
+      panic("usertrap(): pte should exist\n");
+
+    if ((*fpte & PTE_V) == 0)
+	  panic("usertrap(): page not present");
+	
+	uint64 fpa = PTE2PA(*fpte);
+	uint64 flags = PTE_FLAGS(*fpte);
+	
+	// tries to write a previously non-writable page
+	if ((flags & PTE_COW) == 0) {
+	  printf("usertrap(): page not previously writable\n");
+      setkilled(p);
+	} else {
+      // all good, allocate a new page	
+	  uint64 ka = (uint64) kalloc();
+	  if (ka == 0) {
+    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+		panic("usertrap(): no free memory\n");
+	  }
+      memmove((void *)ka, (char *)fpa,  PGSIZE);
+	  decrc((uint64)fpa);
+
+      if (mappages(p->pagetable, PGROUNDDOWN(fva), PGSIZE, ka, PTE_U | PTE_R | PTE_V | PTE_W) != 0) {
+		kfree((void *)ka);
+		return;
+	  }
+
+	}
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

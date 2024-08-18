@@ -11,15 +11,13 @@
 
 void freerange(void *pa_start, void *pa_end);
 
-void setrc(uint64 pa, int new);
-void incrc(uint64 pa);
-void decrc(uint64 pa);
-int getid(uint64 pa);
+void incref(uint64);
+void decref(uint64);
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
-int refcounts[((PHYSTOP) - (KERNBASE)) / PGSIZE];
+int refcounts[(PHYSTOP - KERNBASE) / PGSIZE + 1];
 
 struct run {
   struct run *next;
@@ -33,8 +31,6 @@ struct {
 void
 kinit()
 {
-  for (int i = 0; i < (PHYSTOP - KERNBASE) / PGSIZE; i++)
-	refcounts[i] = 0;
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
 }
@@ -48,7 +44,6 @@ freerange(void *pa_start, void *pa_end)
     kfree(p);
 }
 
-
 // Free the page of physical memory pointed at by pa,
 // which normally should have been returned by a
 // call to kalloc().  (The exception is when
@@ -60,14 +55,17 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
- 
-  int rc = refcounts[getid((uint64)pa)];
-  if (rc > 0) return;
+  
+  decref((uint64)pa);
+  if (refcounts[(PGROUNDDOWN((uint64)pa) - KERNBASE) / PGSIZE] > 0)
+	return;
+
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
-  r = (struct run*)pa;
-  acquire(&kmem.lock);
 
+  r = (struct run*)pa;
+
+  acquire(&kmem.lock);
   r->next = kmem.freelist;
   kmem.freelist = r;
   release(&kmem.lock);
@@ -86,41 +84,18 @@ kalloc(void)
   if(r)
     kmem.freelist = r->next;
   release(&kmem.lock);
-  
-  if(r) {
+
+  if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
-    setrc((uint64)r, 1);
-  }
+
+  incref((uint64)r);
   return (void*)r;
 }
 
- 
-int
-getid(uint64 pa) 
-{
-  //printf("index %d\n", ((pa) - (KERNBASE)) / PGSIZE);
-  int id =  ((pa) - KERNBASE) / PGSIZE;
-  if (id >= 32768 || id < 0)
-	printf("incorrect index! -> %d\n", id);
-  return id;
+void incref(uint64 pa) {
+  refcounts[(PGROUNDDOWN(pa) - KERNBASE) / PGSIZE] += 1;
 }
 
-void 
-incrc(uint64 pa) 
-{
-  refcounts[getid(pa)] += 1;
-}
-
-void
-decrc(uint64 pa)
-{
-  if (pa < KERNBASE)
-	printf("incorrect index in decrc\n");
-  refcounts[getid(pa)] -= 1;
-}
-
-void 
-setrc(uint64 pa, int new) 
-{
-  refcounts[getid(pa)] = new;
+void decref(uint64 pa) { 
+  refcounts[(PGROUNDDOWN(pa) - KERNBASE) / PGSIZE] -= 1;
 }
