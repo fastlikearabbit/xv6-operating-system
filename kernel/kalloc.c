@@ -19,6 +19,7 @@ int getid(uint64 pa);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
+struct spinlock reflock;
 int refcounts[((PHYSTOP) - (KERNBASE)) / PGSIZE];
 
 struct run {
@@ -38,6 +39,8 @@ kinit()
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
   flag = 0;
+
+  initlock(&reflock, "reflock");
 }
 
 void
@@ -67,11 +70,13 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
+  acquire(&reflock);
   if (!flag) 
     refcounts[getid((uint64)pa)] -= 1;
+  release(&reflock);
 
   int rc = refcounts[getid((uint64)pa)];
-  if (rc < 0) printf("incorrect!!!\n");
+  if (rc < 0) printf("incorrect!!! %d ----> %p\n", rc, pa);
   if (rc > 0) return;
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -119,17 +124,23 @@ getid(uint64 pa)
 void 
 incrc(uint64 pa) 
 {
+  acquire(&reflock);
   refcounts[getid(pa)] += 1;
+  release(&reflock);
 }
 
 void
 decrc(uint64 pa)
 {
+  acquire(&reflock);
   refcounts[getid(pa)] -= 1;
+  release(&reflock);
 }
 
 void 
 setrc(uint64 pa, int new) 
 {
+  acquire(&reflock);
   refcounts[getid(pa)] = new;
+  release(&reflock);
 }
