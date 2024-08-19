@@ -72,6 +72,11 @@ usertrap(void)
 
 	// get faulting virtual address
 	uint64 fva = r_stval();
+    if (fva >= MAXVA) {
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      setkilled(p);
+    } else { 
 	pte_t *fpte = walk(p->pagetable, fva, 0);
     if (!fpte)
       panic("usertrap(): pte should exist\n");
@@ -102,7 +107,7 @@ usertrap(void)
         }
 	  }
 
-	}
+	} }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
