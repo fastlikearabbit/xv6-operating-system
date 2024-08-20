@@ -1,0 +1,2 @@
+This happens if the line "*p = e;" is executed consecutively in two threads (that is, before insert returns
+in each of the two threads) since you'd lose the first entry associated with that line of code.
