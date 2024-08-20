@@ -1,0 +1,13 @@
+riscv64-unknown-elf-ld: warning: user/_uthread has a LOAD segment with RWX permissions
+nmeta 46 (boot, super, log blocks 30 inode blocks 13, bitmap blocks 1) blocks 1954 total 2000
+balloc: first 793 blocks have been allocated
+balloc: write bitmap block at sector 45
+*** Now run 'gdb' in another window.
+
+xv6 kernel is booting
+
+hart 2 starting
+hart 1 starting
+init: starting sh
+$ uthread
+$ qemu-system-riscv64: terminating on signal 15 from pid 28723 (<unknown process>)
