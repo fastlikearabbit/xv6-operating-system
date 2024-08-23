@@ -286,7 +286,8 @@ ifeq ($(LAB),fs)
 CPUS := 1
 endif
 
-FWDPORT = $(shell expr `id -u` % 5000 + 25999)
+FWDPORT = 25603
+#FWDPORT = $(shell expr `id -u` % 5000 + 25999)
 
 QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic
 QEMUOPTS += -global virtio-mmio.force-legacy=false
