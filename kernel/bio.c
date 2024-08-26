@@ -115,10 +115,8 @@ bget(uint dev, uint blockno)
             bcache.table[i] = b->next;
           else
             prev->next = b->next;
-          acquire(&bcache.bucket_lock[hash]);
           b->next = bcache.table[hash];
           bcache.table[hash] = b;
-          release(&bcache.bucket_lock[hash]);
         }
 
         release(&bcache.bucket_lock[i]);
@@ -131,6 +129,18 @@ bget(uint dev, uint blockno)
       b = b->next;
     }
     release(&bcache.bucket_lock[i]);
+    for (int i = 0; i < NBUCKET; i++) {
+      struct buf *b = bcache.table[i];
+      while (b) {
+      for (int j = i + 1; j < NBUCKET; j++) {
+        struct buf *bb = bcache.table[j];
+        while (bb) {
+          if (b == bb) panic("duplicate\n");
+          bb = bb->next;
+        }
+      }
+      b = b->next;}
+    }
   }
   
   for (int i = 0; i < NBUCKET; i++) {
