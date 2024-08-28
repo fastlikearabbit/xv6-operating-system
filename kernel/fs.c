@@ -227,7 +227,6 @@ iupdate(struct inode *ip)
 {
   struct buf *bp;
   struct dinode *dip;
-
   bp = bread(ip->dev, IBLOCK(ip->inum, sb));
   dip = (struct dinode*)bp->data + ip->inum%IPB;
   dip->type = ip->type;
@@ -297,7 +296,7 @@ ilock(struct inode *ip)
 
   if(ip == 0 || ip->ref < 1)
     panic("ilock");
-
+  
   acquiresleep(&ip->lock);
 
   if(ip->valid == 0){
@@ -336,6 +335,7 @@ iunlock(struct inode *ip)
 void
 iput(struct inode *ip)
 {
+  static int ni = 0;
   acquire(&itable.lock);
 
   if(ip->ref == 1 && ip->valid && ip->nlink == 0){
@@ -344,7 +344,7 @@ iput(struct inode *ip)
     // ip->ref == 1 means no other process can have ip locked,
     // so this acquiresleep() won't block (or deadlock).
     acquiresleep(&ip->lock);
-
+    printf("free %d inodes\n", ni++);
     release(&itable.lock);
 
     itrunc(ip);
@@ -579,7 +579,6 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
     log_write(bp);
     brelse(bp);
   }
-
   if(off > ip->size)
     ip->size = off;
 

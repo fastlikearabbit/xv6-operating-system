@@ -1,4 +1,3 @@
-//
 // File-system system calls.
 // Mostly argument checking, since we don't trust
 // user code, and calls into file.c and fs.c.
@@ -289,7 +288,8 @@ create(char *path, short type, short major, short minor)
   }
 
   iunlockput(dp);
-
+  static int ni = 0;
+  printf("created %d inodes\n", ni++);
   return ip;
 
  fail:
@@ -300,6 +300,9 @@ create(char *path, short type, short major, short minor)
   iunlockput(dp);
   return 0;
 }
+
+
+#define SYMLINKDEPTH 7
 
 uint64
 sys_open(void)
@@ -364,6 +367,30 @@ sys_open(void)
     itrunc(ip);
   }
 
+  if (ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)) {
+	int depth = 0;
+    while (1) {
+	  char target[MAXPATH];
+      readi(ip, 0, (uint64)target, 0, MAXPATH);
+      iunlockput(ip);
+
+      if ((ip = namei(target)) == 0) {
+		end_op();
+		return -1;
+	  }
+      ilock(ip);
+      f->ip = ip;
+      if (ip->type != T_SYMLINK) {
+		break;
+      }
+      depth++;
+      if (depth >= SYMLINKDEPTH) {
+		iunlockput(ip);
+		end_op();
+		return -1;
+	  }
+    }
+  }
   iunlock(ip);
   end_op();
 
@@ -501,5 +528,28 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+uint64
+sys_symlink(void)
+{
+  char target[MAXPATH], path[MAXPATH];
+  int targetlen = argstr(0, target, MAXPATH);
+  if (targetlen < 0 || argstr(1, path, MAXPATH) < 0)
+	return -1;
+
+  begin_op();
+  struct inode *ip = create((char *)path, T_SYMLINK, 0, 0);
+  if (ip == 0) {
+	end_op();
+	return -1;
+  }
+
+  if (writei(ip, 0, (uint64)target, 0, targetlen) != targetlen)
+	panic("symlink: writei");
+
+  iunlock(ip);
+  end_op();
   return 0;
 }

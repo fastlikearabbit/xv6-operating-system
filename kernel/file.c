@@ -1,4 +1,4 @@
-//
+
 // Support functions for system calls that involve file descriptors.
 //
 
@@ -179,4 +179,3 @@ filewrite(struct file *f, uint64 addr, int n)
 
   return ret;
 }
-
