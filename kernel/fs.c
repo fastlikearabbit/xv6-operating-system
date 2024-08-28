@@ -335,7 +335,6 @@ iunlock(struct inode *ip)
 void
 iput(struct inode *ip)
 {
-  static int ni = 0;
   acquire(&itable.lock);
 
   if(ip->ref == 1 && ip->valid && ip->nlink == 0){
@@ -344,7 +343,6 @@ iput(struct inode *ip)
     // ip->ref == 1 means no other process can have ip locked,
     // so this acquiresleep() won't block (or deadlock).
     acquiresleep(&ip->lock);
-    printf("free %d inodes\n", ni++);
     release(&itable.lock);
 
     itrunc(ip);
