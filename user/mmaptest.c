@@ -118,7 +118,6 @@ mmap_test(void)
     err("munmap (1)");
 
   printf("test mmap f: OK\n");
-
   printf("test mmap private\n");
   // should be able to map file opened read-only with private writable
   // mapping

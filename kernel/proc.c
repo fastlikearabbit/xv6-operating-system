@@ -146,6 +146,13 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+
+  // Set up the VMA
+  memset(&p->mapped_regions, 0, sizeof(p->mapped_regions[0])*VMASIZE);
+  p->nregions = 0;
+  p->vma_start = MAXVA - 2 * PGSIZE;
+  p->vma_end = p->vma_start - 20 * PGSIZE;
+
   return p;
 }
 

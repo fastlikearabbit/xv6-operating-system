@@ -503,3 +503,40 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_mmap(void)
+{
+  // addr and offset will always be zero;
+  uint64 addr = 0, len, offset = 0;
+  int prot, flags, fd;
+  struct file *f;
+   
+  argaddr(1, &len);
+  argint(2, &prot);
+  argint(3, &flags);
+  argfd(4, &fd, &f);
+  
+  struct proc *p = myproc();
+  addr = p->vma_start;
+  printf("%p\n", addr);
+  p->mapped_regions[p->nregions].va_start   = (void *)addr; 
+  p->mapped_regions[p->nregions].len        = (size_t)len;
+  p->mapped_regions[p->nregions].prot       = prot;
+  p->mapped_regions[p->nregions].flags      = flags;
+  p->mapped_regions[p->nregions].offset     = (size_t) offset;
+  p->mapped_regions[p->nregions].f          = filedup(f);
+  p->mapped_regions[p->nregions].nunmap     = len / PGSIZE + !(len % PGSIZE == 0);
+
+  p->nregions++;
+  p->vma_start += PGROUNDUP(len);
+  if (p->vma_start > p->vma_end)
+	panic!("mmap: no free memory\n");
+  return addr;
+}
+
+uint64
+sys_munmap(void)
+{
+   return 0xffffffffffffffff;
+}
