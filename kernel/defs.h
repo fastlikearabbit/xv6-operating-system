@@ -12,6 +12,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct vma;
 #ifdef LAB_NET
 struct mbuf;
 struct sock;
@@ -37,11 +38,12 @@ int             exec(char*, char**);
 struct file*    filealloc(void);
 void            fileclose(struct file*);
 struct file*    filedup(struct file*);
+struct file*    filededup(struct file*);
 void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
 int             filewrite(struct file*, uint64, int n);
-
+int             write_page(struct vma*, uint64);
 // fs.c
 void            fsinit(int);
 int             dirlink(struct inode*, char*, uint);

@@ -1,12 +1,14 @@
 // VMA for mmap
 struct vma {
-  void *va_start;
+  uint64 va_start;
   uint64 len;
   int prot;
   int flags;
   struct file *f;
   uint64 offset;
-  int nunmap;
+
+  uint64 va_map_start;
+  uint64 va_map_end;
 };
 
 // Saved registers for kernel context switches.
@@ -109,6 +111,7 @@ struct proc {
   struct vma mapped_regions[VMASIZE];
   int nregions;
   uint64 vma_start;
+  uint64 vma_current;
   uint64 vma_end; // end of virtual memory for mmap files
 
   // these are private to the process, so p->lock need not be held.

@@ -150,9 +150,9 @@ found:
   // Set up the VMA
   memset(&p->mapped_regions, 0, sizeof(p->mapped_regions[0])*VMASIZE);
   p->nregions = 0;
-  p->vma_start = MAXVA - 2 * PGSIZE;
-  p->vma_end = p->vma_start - 20 * PGSIZE;
-
+  p->vma_end = MAXVA - 2 * PGSIZE;
+  p->vma_start = p->vma_end - 200 * PGSIZE;
+  p->vma_current = p->vma_start;
   return p;
 }
 
@@ -294,7 +294,6 @@ fork(void)
   if((np = allocproc()) == 0){
     return -1;
   }
-
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -309,6 +308,30 @@ fork(void)
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
+  // copy vmas
+  for (int i = 0; i < VMASIZE; i++) {
+	struct vma *v = &np->mapped_regions[i];
+    *v = p->mapped_regions[i];
+    if (p->mapped_regions[i].f)
+	  np->mapped_regions[i].f = filedup(p->mapped_regions[i].f);
+
+	pte_t *pte;
+    uint flags;
+    uint64 pa;
+    char *mem;
+    for (uint64 i = v->va_start; i < v->va_start + v->len; i += PGSIZE) {
+      if((pte = walk(p->pagetable, i, 0)) == 0)
+        panic("uvmcopy: pte should exist");
+      if((*pte & PTE_V) == 0)
+        continue; 
+      pa = PTE2PA(*pte);
+      flags = PTE_FLAGS(*pte);
+      mem = kalloc();
+      memmove(mem, (char*)pa, PGSIZE);
+      mappages(np->pagetable, i, PGSIZE, (uint64)mem, flags);
+    }
+  }
+
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
     if(p->ofile[i])
@@ -318,6 +341,7 @@ fork(void)
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
+
 
   release(&np->lock);
 
@@ -365,6 +389,12 @@ exit(int status)
       fileclose(f);
       p->ofile[fd] = 0;
     }
+  }
+
+  for (int i = 0; i < VMASIZE; i++) {
+	struct vma *v = &p->mapped_regions[i];
+    uvmunmap(p->pagetable, (uint64)v->va_start, v->len / PGSIZE, 1);
+    memset((void *)v, 0, sizeof(*v));
   }
 
   begin_op();

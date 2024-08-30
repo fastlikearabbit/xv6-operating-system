@@ -508,7 +508,7 @@ uint64
 sys_mmap(void)
 {
   // addr and offset will always be zero;
-  uint64 addr = 0, len, offset = 0;
+  uint64 addr = 0, len;
   int prot, flags, fd;
   struct file *f;
    
@@ -517,26 +517,80 @@ sys_mmap(void)
   argint(3, &flags);
   argfd(4, &fd, &f);
   
+  if (!f->writable && (prot & PROT_WRITE) && (flags & MAP_SHARED)) 
+	return -1;
   struct proc *p = myproc();
-  addr = p->vma_start;
-  printf("%p\n", addr);
-  p->mapped_regions[p->nregions].va_start   = (void *)addr; 
+  addr = p->vma_current;
+  p->mapped_regions[p->nregions].va_start   = addr; 
   p->mapped_regions[p->nregions].len        = (size_t)len;
   p->mapped_regions[p->nregions].prot       = prot;
   p->mapped_regions[p->nregions].flags      = flags;
-  p->mapped_regions[p->nregions].offset     = (size_t) offset;
+  p->mapped_regions[p->nregions].offset     = 0;
   p->mapped_regions[p->nregions].f          = filedup(f);
-  p->mapped_regions[p->nregions].nunmap     = len / PGSIZE + !(len % PGSIZE == 0);
-
+  p->mapped_regions[p->nregions].va_map_start = addr;
+  p->mapped_regions[p->nregions].va_map_end = addr;  
   p->nregions++;
-  p->vma_start += PGROUNDUP(len);
-  if (p->vma_start > p->vma_end)
-	panic!("mmap: no free memory\n");
+  p->vma_current += len + PGSIZE;
+  if (p->vma_current >= p->vma_end) {
+    printf("current: %p, end: %p\n", p->vma_current, p->vma_end);
+	panic("mmap: no free memory\n");
+  }
   return addr;
 }
 
 uint64
 sys_munmap(void)
 {
-   return 0xffffffffffffffff;
+  uint64 addr;
+  uint64 len;
+  argaddr(0, &addr);
+  argaddr(1, &len);
+
+  struct proc *p = myproc();
+  for (int i = 0; i < VMASIZE; i++) {
+	struct vma *v = &p->mapped_regions[i];
+    if (addr >= v->va_start && addr < v->va_start + v->len) {
+      struct file *f = v->f;
+	  if (v->flags & MAP_SHARED) {
+        int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
+        int j = 0, r;
+        while(j < len){
+          int len1 = len - j;
+          if(len1 > max)
+            len1 = max;
+
+          begin_op();
+          ilock(f->ip);
+          if ((r = writei(f->ip, 1, addr + j, f->off, len1)) > 0)
+            f->off += r;
+          iunlock(f->ip);
+          end_op();
+ 
+          if(r != len1){
+             // error from writei
+             break;
+          }
+          i += r;
+        }
+      }
+      uvmunmap(p->pagetable, addr, len / PGSIZE, 1);
+
+      pte_t *pte;
+      uint64 i;
+      uint cond = 0;
+      for (i = v->va_start; i <= v->va_start + v->len; i += PGSIZE) {
+        printf("lloop\n");
+      	if((pte = walk(p->pagetable, i, 0)) == 0)
+		  continue;
+        if ((*pte & PTE_V) == 0)
+		  continue;
+        cond = 1;
+      }
+      if (!cond && v->va_map_end > v->va_map_start) {
+        printf("here with %d\n", f->ref);
+       }
+	  return 0;
+    }
+  }
+  return -1;
 }

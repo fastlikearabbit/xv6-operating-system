@@ -55,6 +55,18 @@ filedup(struct file *f)
   return f;
 }
 
+// Decrement ref count for file f
+struct file*
+filededup(struct file *f)
+{
+  acquire(&ftable.lock);
+  if (f->ref < 1)
+	panic("filededup");
+  f->ref--;
+  release(&ftable.lock);
+  return f;
+}
+
 // Close file f.  (Decrement ref count, close when reaches 0.)
 void
 fileclose(struct file *f)
@@ -180,3 +192,17 @@ filewrite(struct file *f, uint64 addr, int n)
   return ret;
 }
 
+int
+write_page(struct vma *v, uint64 va)
+{
+  struct inode *ip = v->f->ip;
+  
+  ilock(ip); 
+  int r = readi(ip, 1, va, v->offset, PGSIZE);
+  //printf("r=%d\n", r);
+  printf("off=%d\n", v->offset);
+  printf("r=%d\n", r);
+  v->offset += r;
+  iunlock(ip);
+  return 0;
+}
