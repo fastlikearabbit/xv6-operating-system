@@ -33,7 +33,7 @@ void
 proc_mapstacks(pagetable_t kpgtbl)
 {
   struct proc *p;
-  
+
   for(p = proc; p < &proc[NPROC]; p++) {
     char *pa = kalloc();
     if(pa == 0)
@@ -48,7 +48,7 @@ void
 procinit(void)
 {
   struct proc *p;
-  
+
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
   for(p = proc; p < &proc[NPROC]; p++) {
@@ -93,7 +93,7 @@ int
 allocpid()
 {
   int pid;
-  
+
   acquire(&pid_lock);
   pid = nextpid;
   nextpid = nextpid + 1;
@@ -148,9 +148,10 @@ found:
 
 
   // Set up the VMA
-  memset(&p->mapped_regions, 0, sizeof(p->mapped_regions[0])*VMASIZE);
+  for (int i = 0; i < VMASIZE; i++)
+    memset(p->mapped_regions + i, 0, sizeof(struct vma));
   p->nregions = 0;
-  p->vma_end = MAXVA - 2 * PGSIZE;
+  p->vma_end = MAXVA - 100 * PGSIZE;
   p->vma_start = p->vma_end - 200 * PGSIZE;
   p->vma_current = p->vma_start;
   return p;
@@ -243,7 +244,7 @@ userinit(void)
 
   p = allocproc();
   initproc = p;
-  
+
   // allocate one user page and copy initcode's instructions
   // and data into it.
   uvmfirst(p->pagetable, initcode, sizeof(initcode));
@@ -308,30 +309,40 @@ fork(void)
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
-  // copy vmas
-  for (int i = 0; i < VMASIZE; i++) {
-	struct vma *v = &np->mapped_regions[i];
-    *v = p->mapped_regions[i];
-    if (p->mapped_regions[i].f)
-	  np->mapped_regions[i].f = filedup(p->mapped_regions[i].f);
+  np->vma_end = p->vma_end;
+  np->vma_current = p->vma_current;
+  np->vma_start = p->vma_start;
 
-	pte_t *pte;
-    uint flags;
-    uint64 pa;
-    char *mem;
-    for (uint64 i = v->va_start; i < v->va_start + v->len; i += PGSIZE) {
-      if((pte = walk(p->pagetable, i, 0)) == 0)
-        panic("uvmcopy: pte should exist");
-      if((*pte & PTE_V) == 0)
-        continue; 
-      pa = PTE2PA(*pte);
-      flags = PTE_FLAGS(*pte);
-      mem = kalloc();
-      memmove(mem, (char*)pa, PGSIZE);
-      mappages(np->pagetable, i, PGSIZE, (uint64)mem, flags);
+  for (int i = 0; i < VMASIZE; i++)
+      np->mapped_regions[i] = p->mapped_regions[i];
+  // copy vmas
+  for (int i = 0; i < p->nregions; i++) {
+	struct vma *v = &p->mapped_regions[i];
+	printf("i=%d\n", i);
+    if (!p->mapped_regions[i].f)
+      continue;
+	np->mapped_regions[i].f = filedup(p->mapped_regions[i].f);
+
+    for (int j = 0; j < NVMAP; j++) {
+        if (v->allocated[j]) {
+            printf("in fork and allocating\n");
+            uint64 ka = (uint64)kalloc();
+            if (ka == 0)
+              panic("fork: kalloc\n");
+            // copy to ka and map allocated pages to child
+            pte_t *pte = walk(p->pagetable, v->addr + j * PGSIZE, 0);
+            if (pte == 0)
+              panic("pte should exist\n");
+            uint64 pa = PTE2PA(*pte);
+            printf("pte: %p\n", pte);
+            printf("pa: %p\n", pa);
+            uint flags = PTE_FLAGS(*pte);
+            memmove((void *)ka, (char *)pa, PGSIZE);
+            if (mappages(np->pagetable, v->addr + j * PGSIZE, PGSIZE, ka, flags) < 0)
+              panic("fork: mappages\n");
+        }
     }
   }
-
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
     if(p->ofile[i])
@@ -353,6 +364,7 @@ fork(void)
   np->state = RUNNABLE;
   release(&np->lock);
 
+  printf("out of fork\n");
   return pid;
 }
 
@@ -393,7 +405,7 @@ exit(int status)
 
   for (int i = 0; i < VMASIZE; i++) {
 	struct vma *v = &p->mapped_regions[i];
-    uvmunmap(p->pagetable, (uint64)v->va_start, v->len / PGSIZE, 1);
+    uvmunmap(p->pagetable, (uint64)v->addr, v->len / PGSIZE, 1);
     memset((void *)v, 0, sizeof(*v));
   }
 
@@ -409,7 +421,7 @@ exit(int status)
 
   // Parent might be sleeping in wait().
   wakeup(p->parent);
-  
+
   acquire(&p->lock);
 
   p->xstate = status;
@@ -465,7 +477,7 @@ wait(uint64 addr)
       release(&wait_lock);
       return -1;
     }
-    
+
     // Wait for a child to exit.
     sleep(p, &wait_lock);  //DOC: wait-sleep
   }
@@ -578,7 +590,7 @@ void
 sleep(void *chan, struct spinlock *lk)
 {
   struct proc *p = myproc();
-  
+
   // Must acquire p->lock in order to
   // change p->state and then call sched.
   // Once we hold p->lock, we can be
@@ -657,7 +669,7 @@ int
 killed(struct proc *p)
 {
   int k;
-  
+
   acquire(&p->lock);
   k = p->killed;
   release(&p->lock);

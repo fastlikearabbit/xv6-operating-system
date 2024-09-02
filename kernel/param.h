@@ -12,3 +12,4 @@
 #define FSSIZE       2000  // size of file system in blocks
 #define MAXPATH      128   // maximum file path name
 #define VMASIZE      16    // size of virtual memory area
+#define NVMAP        20    // max number of pages per mmap call

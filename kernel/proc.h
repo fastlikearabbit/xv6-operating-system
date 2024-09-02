@@ -1,14 +1,15 @@
 // VMA for mmap
 struct vma {
-  uint64 va_start;
+  uint64 addr;
   uint64 len;
   int prot;
   int flags;
   struct file *f;
   uint64 offset;
 
-  uint64 va_map_start;
-  uint64 va_map_end;
+  int allocated[NVMAP];
+  int nunmap;
+
 };
 
 // Saved registers for kernel context switches.

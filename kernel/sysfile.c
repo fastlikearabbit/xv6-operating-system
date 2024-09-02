@@ -85,7 +85,7 @@ sys_write(void)
   struct file *f;
   int n;
   uint64 p;
-  
+
   argaddr(1, &p);
   argint(2, &n);
   if(argfd(0, 0, &f) < 0)
@@ -412,7 +412,7 @@ sys_chdir(void)
   char path[MAXPATH];
   struct inode *ip;
   struct proc *p = myproc();
-  
+
   begin_op();
   if(argstr(0, path, MAXPATH) < 0 || (ip = namei(path)) == 0){
     end_op();
@@ -511,26 +511,27 @@ sys_mmap(void)
   uint64 addr = 0, len;
   int prot, flags, fd;
   struct file *f;
-   
+
   argaddr(1, &len);
   argint(2, &prot);
   argint(3, &flags);
   argfd(4, &fd, &f);
-  
-  if (!f->writable && (prot & PROT_WRITE) && (flags & MAP_SHARED)) 
+
+  if (!f->writable && (prot & PROT_WRITE) && (flags & MAP_SHARED))
 	return -1;
   struct proc *p = myproc();
   addr = p->vma_current;
-  p->mapped_regions[p->nregions].va_start   = addr; 
+  p->mapped_regions[p->nregions].addr       = addr;
   p->mapped_regions[p->nregions].len        = (size_t)len;
   p->mapped_regions[p->nregions].prot       = prot;
   p->mapped_regions[p->nregions].flags      = flags;
   p->mapped_regions[p->nregions].offset     = 0;
   p->mapped_regions[p->nregions].f          = filedup(f);
-  p->mapped_regions[p->nregions].va_map_start = addr;
-  p->mapped_regions[p->nregions].va_map_end = addr;  
+  p->mapped_regions[p->nregions].nunmap     = PGROUNDUP(len) / PGSIZE;
+  for (int i = 0; i < NVMAP; i++)
+    p->mapped_regions[p->nregions].allocated[i] = 0;
   p->nregions++;
-  p->vma_current += len + PGSIZE;
+  p->vma_current += PGROUNDUP(len);
   if (p->vma_current >= p->vma_end) {
     printf("current: %p, end: %p\n", p->vma_current, p->vma_end);
 	panic("mmap: no free memory\n");
@@ -549,7 +550,7 @@ sys_munmap(void)
   struct proc *p = myproc();
   for (int i = 0; i < VMASIZE; i++) {
 	struct vma *v = &p->mapped_regions[i];
-    if (addr >= v->va_start && addr < v->va_start + v->len) {
+    if (addr >= v->addr && addr < v->addr + v->len) {
       struct file *f = v->f;
 	  if (v->flags & MAP_SHARED) {
         int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
@@ -565,7 +566,7 @@ sys_munmap(void)
             f->off += r;
           iunlock(f->ip);
           end_op();
- 
+
           if(r != len1){
              // error from writei
              break;
@@ -573,24 +574,19 @@ sys_munmap(void)
           i += r;
         }
       }
-      uvmunmap(p->pagetable, addr, len / PGSIZE, 1);
 
-      pte_t *pte;
-      uint64 i;
-      uint cond = 0;
-      for (i = v->va_start; i <= v->va_start + v->len; i += PGSIZE) {
-        printf("lloop\n");
-      	if((pte = walk(p->pagetable, i, 0)) == 0)
-		  continue;
-        if ((*pte & PTE_V) == 0)
-		  continue;
-        cond = 1;
+	  int start = (PGROUNDDOWN(addr) - v->addr) / PGSIZE;
+	  len = PGROUNDUP(len) / PGSIZE;
+	  for (int i = start; i < start + len; i++)
+		v->allocated[i] = 0;
+      uvmunmap(p->pagetable, addr, len / PGSIZE, 1);
+      v->nunmap -= PGROUNDUP(len) / PGSIZE;
+      if (v->nunmap == 0) {
+          printf("munmap: file null here\n");
+          filededup(f);
+          v->f = 0;
       }
-      if (!cond && v->va_map_end > v->va_map_start) {
-        printf("here with %d\n", f->ref);
-       }
-	  return 0;
     }
   }
-  return -1;
+  return 0;
 }
