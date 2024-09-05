@@ -49,30 +49,6 @@ binit(void)
     initsleeplock(&b->lock, "buffer");
   }
 
-    for (int i = 0; i < NBUCKET; i++) {
-      struct buf *b = bcache.table[i];
-      while (b) {
-      if (b->blockno % NBUCKET != i) printf("dont match init\n");
-      for (int j = i + 1; j < NBUCKET; j++) {
-        struct buf *bb = bcache.table[j];
-        while (bb) {
-          if (b == bb) panic("duplicate in init\n");
-          bb = bb->next;
-        }
-      }
-      b = b->next;}
-    }
-
-  for (i = 0; i < NBUCKET; i++) {
-    struct buf *b = bcache.table[i];
-    printf("bucket %d : --> ", i);
-    while (b) {
-      printf("_x_ --> ");
-      b = b->next;
-    }
-    printf(" 0 \n");
-  }
-
   for (int i = 0; i < NBUCKET; i++)
     initlock(&bcache.bucket_lock[i], "bcache.bucket");
 }
@@ -84,34 +60,13 @@ static struct buf*
 bget(uint dev, uint blockno)
 {
   struct buf *b;
-
   uint hash = blockno % NBUCKET;
   acquire(&bcache.bucket_lock[hash]);
-    for (int i = 0; i < NBUCKET; i++) {
-      struct buf *b = bcache.table[i];
-      //printf("bucket %d: ", i);
-      while (b) {
-      //printf("_%d_ ---> ", b->blockno % NBUCKET);
-      if (b->blockno % NBUCKET != i) printf("dont match\n");
-      for (int j = i + 1; j < NBUCKET; j++) {
-        struct buf *bb = bcache.table[j];
-        while (bb) {
-          if (b != 0 && b == bb) {
-          printf("hash1 %d, hash2 %d\n", i, j);
-          panic("duplicate\n");
-          }
-          bb = bb->next;
-        }
-      }
-      b = b->next;}
-      //printf("\n");
-    }
   b = bcache.table[hash];
   // Is the block already cached?
   while (b) {
     if (b->dev == dev && b->blockno == blockno) {
       b->refcnt++;
-
       release(&bcache.bucket_lock[hash]);
       acquiresleep(&b->lock);
       return b;
@@ -132,54 +87,64 @@ bget(uint dev, uint blockno)
         b->blockno = blockno;
         b->valid = 0;
 		b->refcnt = 1;
-        
         // Move block to corresponding bucket
         if (i != hash) {
+          // Remove entry from current bucket
           if (!prev)
             bcache.table[i] = b->next;
           else
             prev->next = b->next;
-          acquire(&bcache.bucket_lock[hash]);  
-          b->next = bcache.table[hash];
-          bcache.table[hash] = b;
+          // Release the bucket lock to avoid deadlock when two threads
+          // try to do mutual swapping: thread A moves from bucket i -> j
+          // and thread B moves j -> i.
+          // This would cause a deadlock if both threads would acquire
+          // both bucket_lock[i] and bucket_lock[j]
+          // Example:
+          // THREAD A                        THREAD B
+          // acquire(buck[i])                acquire(buck[j])
+          // acquire(buck[j])  <-deadlock->  acquire(buck[i])
+          // So either thread must first release the bucket_lock after removing an
+          // element from it, then reaquire it again.
+          release(&bcache.bucket_lock[i]);
+
+          acquire(&bcache.bucket_lock[hash]);
+          acquire(&bcache.bucket_lock[i]);
+          struct buf *c = bcache.table[hash];
+          if (!c) {
+              bcache.table[hash] = b;
+          } else {
+              while (c->next)
+                c = c->next;
+              c->next = b;
+          }
+          b->next = 0;
           release(&bcache.bucket_lock[hash]);
-        } 
-
-        release(&bcache.lock);
+        }
         release(&bcache.bucket_lock[i]);
+        release(&bcache.lock);
         acquiresleep(&b->lock);
-
+        // TODO: after releasing the bucket_lock[hash], where b was moved
+        // some other thread searching for the same blockno in the cache
+        // might find this block and start using it
+        // Then here we return the block with the valid bit set to 1
+        // so the bread doesn't look in the disk to read the new file content
+        // and instead uses the old one.
+        if (b->refcnt != 1) {
+            printf("who tf uses this? refcnt: %d, valid: %d\n", b->refcnt, b->valid);
+        }
+        b->dev = dev;
+        b->blockno = blockno;
+        b->valid = 0;
         return b;
       }
       prev = b;
       b = b->next;
     }
-  release(&bcache.bucket_lock[i]);
-    for (int i = 0; i < NBUCKET; i++) {
-      struct buf *b = bcache.table[i];
-      while (b) {
-      for (int j = i + 1; j < NBUCKET; j++) {
-        struct buf *bb = bcache.table[j];
-        while (bb) {
-          if (b == bb) panic("duplicate\n");
-          bb = bb->next;
-        }
-      }
-      b = b->next;}
-    }
+    release(&bcache.bucket_lock[i]);
   }
-  for (int i = 0; i < NBUCKET; i++) {
-    struct buf *b = bcache.table[i];
-    printf("bucket %d : --> ", i);
-    while (b) {
-      printf("_%d_ --> ", b->refcnt);
-      b = b->next;
-    }
-    printf(" 0 \n");
-  }
-  panic("bget: no buffers");
-}
 
+  panic("bget: no free blocks");
+}
 // Return a locked buf with the contents of the indicated block.
 struct buf*
 bread(uint dev, uint blockno)
@@ -210,13 +175,12 @@ brelse(struct buf *b)
   if(!holdingsleep(&b->lock))
     panic("brelse");
 
+  uint hash = b->blockno % NBUCKET;
   releasesleep(&b->lock);
 
-  uint hash = b->blockno % NBUCKET;
   acquire(&bcache.bucket_lock[hash]);
   b->refcnt--;
   release(&bcache.bucket_lock[hash]);
-  
 }
 
 void
@@ -234,5 +198,3 @@ bunpin(struct buf *b) {
   b->refcnt--;
   release(&bcache.bucket_lock[hash]);
 }
-
-
